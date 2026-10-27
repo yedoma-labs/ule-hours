@@ -87,8 +87,8 @@ impl Schedule {
     }
 
     fn local(&self, date: Date, secs: u32) -> Option<Timestamp> {
-        let (date, secs) = if secs == 86_400 {
-            (date.tomorrow().ok()?, 0)
+        let (date, secs) = if secs >= 86_400 {
+            (date.tomorrow().ok()?, secs - 86_400)
         } else {
             (date, secs)
         };
@@ -101,7 +101,9 @@ impl Schedule {
         self.zone.to_ambiguous_timestamp(dt).compatible().ok()
     }
 
-    /// The windows that apply on `date` (special days win over holidays and closures).
+    /// The windows that open on `date` (special days win over holidays and closures). An
+    /// overnight window belongs to the day it opens on, so a holiday on Saturday does not cut
+    /// short Friday night's shift.
     pub fn windows_on(&self, date: Date) -> Vec<Interval> {
         let windows: &[Window] = if let Some(w) = self.special.get(&date) {
             w
@@ -125,8 +127,11 @@ impl Schedule {
     /// Whether the business is open at `at`.
     pub fn is_open(&self, at: Timestamp) -> bool {
         let date = at.to_zoned(self.zone.clone()).date();
-        self.windows_on(date)
-            .iter()
+        // yesterday's overnight window may still be running
+        date.yesterday()
+            .into_iter()
+            .chain(Some(date))
+            .flat_map(|d| self.windows_on(d))
             .any(|i| i.start <= at && at < i.end)
     }
 
@@ -134,12 +139,15 @@ impl Schedule {
     /// interval is clipped to start no earlier than `from`. The iterator ends at the
     /// search horizon (10 years by default).
     pub fn intervals<'a>(&'a self, from: Timestamp, pauses: &'a Pauses) -> Intervals<'a> {
+        let from_date = from.to_zoned(self.zone.clone()).date();
         Intervals {
             schedule: self,
             pauses,
             from,
-            date: Some(from.to_zoned(self.zone.clone()).date()),
+            // start a day early: an overnight window of the previous day may still be open
+            date: from_date.yesterday().ok().or(Some(from_date)),
             days_left: self.horizon_days,
+            cursor: Timestamp::MIN,
             queue: VecDeque::new(),
         }
     }
@@ -287,6 +295,8 @@ pub struct Intervals<'a> {
     from: Timestamp,
     date: Option<Date>,
     days_left: u32,
+    /// End of the last window handled, so overlapping windows of two days are not counted twice.
+    cursor: Timestamp,
     queue: VecDeque<Interval>,
 }
 
@@ -304,7 +314,8 @@ impl Iterator for Intervals<'_> {
             let date = self.date?;
             self.days_left -= 1;
             for iv in self.schedule.windows_on(date) {
-                let start = iv.start.max(self.from);
+                let start = iv.start.max(self.from).max(self.cursor);
+                self.cursor = self.cursor.max(iv.end);
                 if iv.end > start {
                     self.queue.extend(self.pauses.subtract(start, iv.end));
                 }

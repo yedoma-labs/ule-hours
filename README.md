@@ -78,13 +78,13 @@ cargo run --example sla
 
 ## Other crates
 
-- [`workclock`](https://crates.io/crates/workclock) is a well-tested business-time engine with Python and JavaScript bindings and overnight shifts, published a few days before this crate. If you need those, use it. `ule-hours` is for Rust code that needs paused SLA clocks, Easter-based holiday rules and special days out of the box, and has no overnight windows (a window ends at 24:00 of its day).
+- [`workclock`](https://crates.io/crates/workclock) is a well-tested business-time engine with Python and JavaScript bindings and overnight shifts, published a few days before this crate. If you need those, use it. `ule-hours` is for Rust code that needs paused SLA clocks, Easter-based holiday rules, special days and country presets out of the box.
 - [`workdays`](https://crates.io/crates/workdays) counts working *days*; [`opening-hours`](https://crates.io/crates/opening-hours) evaluates OpenStreetMap opening-hours strings.
 - Holiday data per country: `holiday_de`, `feiertage`. `ule-hours` only ships the German nationwide set.
 
 ## Limitations
 
-- **No overnight windows.** A window `22:00-06:00` is rejected; use `22:00-24:00` on one day and `00:00-06:00` on the next.
+- **An overnight window belongs to the day it opens on.** With a holiday on Saturday, Friday night's `22:00-06:00` still runs until Saturday 06:00, and Saturday night is closed.
 - **Gaps and folds.** A window that starts inside a DST gap starts at the first valid instant after it; one that starts in a fold starts at the first of the two instants (jiff's "compatible" rule).
 - **Holidays are your input.** Only German nationwide holidays are built in; regional days, school holidays and other countries are yours to add.
 - **Granularity is seconds.**

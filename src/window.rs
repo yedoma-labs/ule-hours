@@ -4,7 +4,9 @@ use std::fmt;
 
 use crate::Error;
 
-/// A stretch of local time, `start..end`, within one calendar day. `24:00` is allowed as end.
+/// A stretch of local time that opens on one calendar day, `start..end`. `24:00` is allowed as
+/// end, and so is an end earlier than the start: `22:00-06:00` is an overnight window that
+/// closes on the next calendar day. It belongs to the day it opens on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Window {
     start: u32,
@@ -14,9 +16,14 @@ pub struct Window {
 const DAY: u32 = 86_400;
 
 impl Window {
-    /// From seconds since local midnight; `start < end <= 86400`.
+    /// From seconds since local midnight; `start < end <= 86400`. An `end` above 86400 closes
+    /// on the next day (`79200..108000` is `22:00-06:00`); a window is at most 24 hours long.
     pub fn new(start_secs: u32, end_secs: u32) -> Result<Self, Error> {
-        if start_secs >= end_secs || end_secs > DAY {
+        if start_secs >= DAY
+            || start_secs >= end_secs
+            || end_secs > start_secs + DAY
+            || end_secs > 2 * DAY
+        {
             return Err(Error::Window(format!("{start_secs}..{end_secs} seconds")));
         }
         Ok(Self {
@@ -30,14 +37,17 @@ impl Window {
         Self::new(start_h * 3600 + start_m * 60, end_h * 3600 + end_m * 60)
     }
 
-    /// Parses `09:00-17:30` (also `HH:MM:SS`, and `24:00` as end).
+    /// Parses `09:00-17:30` (also `HH:MM:SS`, and `24:00` as end). An end before the start
+    /// makes an overnight window: `22:00-06:00`.
     pub fn parse(text: &str) -> Result<Self, Error> {
         let bad = || Error::Window(format!("{text:?}, expected like 09:00-17:30"));
         let (a, b) = text.split_once('-').ok_or_else(bad)?;
-        Self::new(
-            time_of_day(a.trim(), false).ok_or_else(bad)?,
-            time_of_day(b.trim(), true).ok_or_else(bad)?,
-        )
+        let start = time_of_day(a.trim(), false).ok_or_else(bad)?;
+        let mut end = time_of_day(b.trim(), true).ok_or_else(bad)?;
+        if end < start {
+            end += DAY;
+        }
+        Self::new(start, end)
     }
 
     /// Seconds since local midnight at which the window opens.
@@ -45,16 +55,27 @@ impl Window {
         self.start
     }
 
-    /// Seconds since local midnight at which the window closes.
+    /// Seconds since local midnight at which the window closes. Above 86400 for an overnight
+    /// window: the seconds since midnight of the day it opens on.
     pub fn end_secs(&self) -> u32 {
         self.end
+    }
+
+    /// Whether the window closes on the day after it opens (`22:00-06:00`, but not `22:00-24:00`).
+    pub fn is_overnight(&self) -> bool {
+        self.end > DAY
     }
 }
 
 impl fmt::Display for Window {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let t = |s: u32| format!("{:02}:{:02}", s / 3600, s % 3600 / 60);
-        write!(f, "{}-{}", t(self.start), t(self.end))
+        let end = if self.end > DAY {
+            self.end - DAY
+        } else {
+            self.end
+        };
+        write!(f, "{}-{}", t(self.start), t(end))
     }
 }
 
@@ -87,6 +108,14 @@ pub fn parse_windows(text: &str) -> Result<Vec<Window>, Error> {
             "{text:?}: windows overlap or are out of order"
         )));
     }
+    // An overnight window runs into the next day's first window.
+    if let (Some(first), Some(last)) = (windows.first(), windows.last()) {
+        if last.end > DAY && last.end - DAY > first.start {
+            return Err(Error::Window(format!(
+                "{text:?}: the overnight window runs into the first window of the next day"
+            )));
+        }
+    }
     Ok(windows)
 }
 
@@ -108,7 +137,6 @@ mod tests {
             "",
             "9",
             "09:00",
-            "17:00-09:00",
             "09:00-09:00",
             "24:00-25:00",
             "09:61-10:00",
@@ -118,6 +146,25 @@ mod tests {
         ] {
             assert!(Window::parse(s).is_err(), "{s}");
         }
+    }
+
+    #[test]
+    fn an_end_before_the_start_is_overnight() {
+        let w = Window::parse("22:00-06:00").unwrap();
+        assert!(w.is_overnight());
+        assert_eq!((w.start_secs(), w.end_secs()), (79_200, 108_000));
+        assert_eq!(w.to_string(), "22:00-06:00");
+        assert!(!Window::parse("22:00-24:00").unwrap().is_overnight());
+        assert!(Window::new(79_200, 79_200 + 86_400 + 1).is_err());
+        assert!(Window::parse("00:00-24:00").is_ok());
+    }
+
+    #[test]
+    fn overnight_windows_must_fit_before_the_next_day() {
+        assert!(parse_windows("08:00-12:00, 22:00-06:00").is_ok());
+        assert!(parse_windows("22:00-06:00, 08:00-12:00").is_err());
+        assert!(parse_windows("02:00-05:00, 22:00-03:00").is_err());
+        assert!(parse_windows("07:00-12:00, 22:00-06:00").is_ok());
     }
 
     #[test]

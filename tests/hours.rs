@@ -222,7 +222,7 @@ fn errors() {
     ));
     assert!(Schedule::builder("UTC")
         .unwrap()
-        .mon_fri("17:00-09:00")
+        .mon_fri("09:00-09:00")
         .is_err());
     let closed = Schedule::builder("UTC").unwrap().horizon_days(30).build();
     assert_eq!(
@@ -259,4 +259,97 @@ fn long_budgets_stay_fast() {
         .unwrap();
     assert!(due > ts("2026-10-01T00:00:00Z"));
     assert!(start.elapsed().as_secs() < 5);
+}
+
+/// Berlin, every day 22:00-06:00 (a night shift that opens on one day and ends on the next).
+fn night_shift() -> Schedule {
+    Schedule::builder("Europe/Berlin")
+        .unwrap()
+        .every_day("22:00-06:00")
+        .unwrap()
+        .build()
+}
+
+#[test]
+fn an_overnight_window_belongs_to_the_day_it_opens() {
+    let s = night_shift();
+    // Saturday 05:00 is inside Friday night's shift, Saturday 12:00 is not
+    assert!(s.is_open(ts("2026-07-04T03:00:00Z"))); // 05:00 Berlin
+    assert!(!s.is_open(ts("2026-07-04T10:00:00Z"))); // 12:00 Berlin
+    assert!(s.is_open(ts("2026-07-03T20:30:00Z"))); // 22:30 Berlin
+    assert!(!s.is_open(ts("2026-07-04T04:00:00Z"))); // 06:00 Berlin: closed (half-open)
+}
+
+#[test]
+fn a_budget_runs_through_midnight() {
+    let s = night_shift();
+    // 4 hours from Friday 23:00 Berlin end on Saturday 03:00
+    let due = s.add(ts("2026-07-03T21:00:00Z"), hours(4)).unwrap();
+    assert_eq!(berlin(&due.to_string()), "Sat 2026-07-04 03:00");
+    // 8 hours from Friday 23:00: 7 hours in this shift, 1 more at the next opening
+    let due = s.add(ts("2026-07-03T21:00:00Z"), hours(8)).unwrap();
+    assert_eq!(berlin(&due.to_string()), "Sat 2026-07-04 23:00");
+}
+
+#[test]
+fn starting_inside_yesterdays_shift_counts_the_rest_of_it() {
+    let s = night_shift();
+    // Saturday 05:00 Berlin: one hour left, then the next shift opens at 22:00
+    let due = s.add(ts("2026-07-04T03:00:00Z"), hours(2)).unwrap();
+    assert_eq!(berlin(&due.to_string()), "Sat 2026-07-04 23:00");
+    assert_eq!(
+        s.between(ts("2026-07-04T03:00:00Z"), ts("2026-07-04T20:00:00Z")),
+        hours(1)
+    );
+}
+
+#[test]
+fn a_holiday_does_not_cut_short_the_shift_that_opened_the_day_before() {
+    let s = Schedule::builder("Europe/Berlin")
+        .unwrap()
+        .every_day("22:00-06:00")
+        .unwrap()
+        .holiday(Holiday::On(date(2026, 7, 4)))
+        .build();
+    // Friday night runs to Saturday 06:00 although Saturday is a holiday; Saturday night is closed
+    assert!(s.is_open(ts("2026-07-04T03:00:00Z")));
+    assert!(!s.is_open(ts("2026-07-04T21:00:00Z"))); // 23:00 Berlin, Saturday
+}
+
+#[test]
+fn overnight_windows_follow_the_clock_over_a_dst_change() {
+    let s = night_shift();
+    // Saturday 28 March 22:00 CET -> Sunday 29 March 06:00 CEST: 7 elapsed hours
+    let (a, b) = (ts("2026-03-28T21:00:00Z"), ts("2026-03-29T04:00:00Z"));
+    assert_eq!(s.between(a, b), hours(7));
+    // Saturday 24 October 22:00 CEST -> Sunday 25 October 06:00 CET: 9 elapsed hours
+    let (a, b) = (ts("2026-10-24T20:00:00Z"), ts("2026-10-25T05:00:00Z"));
+    assert_eq!(s.between(a, b), hours(9));
+}
+
+#[test]
+fn a_window_list_whose_night_runs_into_the_morning_is_rejected() {
+    assert!(Schedule::builder("UTC")
+        .unwrap()
+        .every_day("00:00-02:00, 20:00-03:00")
+        .is_err());
+}
+
+#[test]
+fn country_presets_close_the_office() {
+    let us = Schedule::builder("America/New_York")
+        .unwrap()
+        .mon_fri("09:00-17:00")
+        .unwrap()
+        .holidays(ule_hours::united_states_federal())
+        .build();
+    // Friday 3 July 2026 is the observed Independence Day: 8 hours from Thursday 14:00 EDT
+    // are 3 h Thursday and 5 h on Monday
+    let due = us.add(ts("2026-07-02T18:00:00Z"), hours(8)).unwrap();
+    assert_eq!(
+        due.to_zoned(jiff::tz::TimeZone::get("America/New_York").unwrap())
+            .strftime("%a %Y-%m-%d %H:%M")
+            .to_string(),
+        "Mon 2026-07-06 14:00"
+    );
 }
