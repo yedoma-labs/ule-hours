@@ -40,7 +40,10 @@ mod sla;
 mod window;
 
 pub use error::Error;
-pub use holiday::{easter_sunday, germany_national, Holiday};
+pub use holiday::{
+    austria_national, easter_sunday, france_national, germany_national, united_states_federal,
+    Holiday,
+};
 pub use jiff;
 pub use pauses::Pauses;
 pub use schedule::{Builder, Interval, Intervals, Schedule};
