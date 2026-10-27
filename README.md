@@ -42,12 +42,13 @@ let due = office.add(arrived, SignedDuration::from_hours(8))?;
 | | |
 |---|---|
 | **Paused SLA clocks** | `Sla` + `Pauses`: the clock stops while you wait for the customer, including pauses without end (`due()` then says `Error::Paused` instead of inventing a date). Elapsed, remaining and breached are computed with the pauses cut out. |
-| **Holiday rules, not lists** | `Holiday::Fixed`, `Holiday::Easter(offset)` (Good Friday = `-2`, Ascension = `39`, ...) and single dates; `germany_national()` brings the nine nationwide German holidays. Regional ones are one line each. |
+| **Holiday rules, not lists** | `Holiday::Fixed`, `Holiday::Easter(offset)` (Good Friday = `-2`, Ascension = `39`, ...), `NthWeekday`, `Observed` and single dates; `germany_national()` brings the nine nationwide German holidays and `germany_regional(GermanState::Bayern)` the regional ones of a federal state. |
 | **Special days** | `24 Dec 08:00-12:00` overrides weekly hours and holidays for one date; `closed_on` takes a bridge day. |
 | **Several windows per day** | `"08:00-12:00, 13:00-17:00"`, validated: ordered, non-overlapping, `24:00` allowed as end. |
 | **DST-correct** | Hours are local, durations are absolute: the night shift `01:00-05:00` is 3 elapsed hours on the spring change and 5 on the autumn change. Tested. |
 | **Lazy and bounded** | `Schedule::intervals` is an iterator; the search stops at a horizon (10 years) with `Error::NeverOpens` instead of looping. |
-| **Small** | One dependency (`jiff`), `#![forbid(unsafe_code)]`, deterministic. |
+| **Small** | One required dependency (`jiff`), `#![forbid(unsafe_code)]`, deterministic. |
+| **Serde (optional)** | With the `serde` feature, holiday rules, `GermanState`, `Window` (as `"22:00-06:00"`) and `Pauses` can be stored and loaded. |
 
 ## Usage
 
@@ -76,24 +77,26 @@ let used = office.between(start, "2026-07-08T00:00:00+02:00".parse()?); // worki
 cargo run --example sla
 ```
 
+Regional holidays come on top of the national ones: `.holidays(germany_regional(GermanState::Bayern))` adds Epiphany, Corpus Christi and All Saints. The optional `serde` feature (`ule-hours = { version = "0.1", features = ["serde"] }`) serializes holiday rules, `GermanState`, `Window` (as text such as `"22:00-06:00"`) and `Pauses`.
+
 ## Other crates
 
 - [`workclock`](https://crates.io/crates/workclock) is a well-tested business-time engine with Python and JavaScript bindings and overnight shifts, published a few days before this crate. If you need those, use it. `ule-hours` is for Rust code that needs paused SLA clocks, Easter-based holiday rules, special days and country presets out of the box.
 - [`workdays`](https://crates.io/crates/workdays) counts working *days*; [`opening-hours`](https://crates.io/crates/opening-hours) evaluates OpenStreetMap opening-hours strings.
-- Holiday data per country: `holiday_de`, `feiertage`. `ule-hours` only ships the German nationwide set.
+- Holiday data per country: `holiday_de`, `feiertage`. `ule-hours` ships the German national and regional sets, and presets for Austria, France and the US.
 
 ## Limitations
 
 - **An overnight window belongs to the day it opens on.** With a holiday on Saturday, Friday night's `22:00-06:00` still runs until Saturday 06:00, and Saturday night is closed.
 - **Gaps and folds.** A window that starts inside a DST gap starts at the first valid instant after it; one that starts in a fold starts at the first of the two instants (jiff's "compatible" rule).
-- **Holidays are your input.** Only German nationwide holidays are built in; regional days, school holidays and other countries are yours to add.
+- **Holidays are your input beyond the presets.** `germany_regional` lists only days that apply statewide: Assumption in Catholic parts of Bavaria, Corpus Christi in parts of Saxony and Thuringia, and Thuringia's Weltkindertag are not in it. School holidays and other regions are yours to add.
 - **Granularity is seconds.**
 
 ## Development
 
 ```bash
-cargo test
-cargo clippy --all-targets -- -D warnings
+cargo test --all-features
+cargo clippy --all-targets --all-features -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 git config core.hooksPath .githooks   # Conventional Commits
 ```

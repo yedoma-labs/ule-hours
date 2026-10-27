@@ -5,6 +5,7 @@ use jiff::ToSpan;
 
 /// A rule that names a holiday in every year.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Holiday {
     /// The same day every year (`Fixed { month: 5, day: 1 }` is 1 May).
     Fixed {
@@ -25,6 +26,7 @@ pub enum Holiday {
         /// 1..=12
         month: i8,
         /// The day of the week.
+        #[cfg_attr(feature = "serde", serde(with = "weekday_name"))]
         weekday: Weekday,
         /// 1..=5, or -1 for the last.
         n: i8,
@@ -38,6 +40,53 @@ pub enum Holiday {
         /// 1..=31
         day: i8,
     },
+    /// The last `weekday` strictly before a fixed date. German Buß- und Bettag is the
+    /// Wednesday before 23 November: `WeekdayBefore { month: 11, day: 23, weekday: Wednesday }`.
+    WeekdayBefore {
+        /// 1..=12
+        month: i8,
+        /// 1..=31
+        day: i8,
+        /// The day of the week.
+        #[cfg_attr(feature = "serde", serde(with = "weekday_name"))]
+        weekday: Weekday,
+    },
+}
+
+/// Weekdays are written as English names, `"thursday"`, because jiff's `Weekday` has no serde
+/// implementation of its own.
+#[cfg(feature = "serde")]
+mod weekday_name {
+    use jiff::civil::Weekday;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(day: &Weekday, serializer: S) -> Result<S::Ok, S::Error> {
+        let name = match day {
+            Weekday::Monday => "monday",
+            Weekday::Tuesday => "tuesday",
+            Weekday::Wednesday => "wednesday",
+            Weekday::Thursday => "thursday",
+            Weekday::Friday => "friday",
+            Weekday::Saturday => "saturday",
+            Weekday::Sunday => "sunday",
+        };
+        serializer.serialize_str(name)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Weekday, D::Error> {
+        let name = <String as Deserialize>::deserialize(deserializer)?;
+        Ok(match name.to_ascii_lowercase().as_str() {
+            "monday" => Weekday::Monday,
+            "tuesday" => Weekday::Tuesday,
+            "wednesday" => Weekday::Wednesday,
+            "thursday" => Weekday::Thursday,
+            "friday" => Weekday::Friday,
+            "saturday" => Weekday::Saturday,
+            "sunday" => Weekday::Sunday,
+            other => return Err(D::Error::custom(format!("unknown weekday {other:?}"))),
+        })
+    }
 }
 
 impl Holiday {
@@ -46,6 +95,11 @@ impl Holiday {
         match *self {
             Holiday::Fixed { month, day } => date.month() == month && date.day() == day,
             Holiday::On(d) => d == date,
+            Holiday::WeekdayBefore {
+                month,
+                day,
+                weekday,
+            } => weekday_before(date.year(), month, day, weekday) == Some(date),
             Holiday::NthWeekday { month, weekday, n } => {
                 date.month() == month
                     && date.weekday() == weekday
@@ -71,6 +125,18 @@ fn observed(year: i16, month: i8, day: i8) -> Option<Date> {
         Weekday::Sunday => d.tomorrow().ok(),
         _ => Some(d),
     }
+}
+
+fn weekday_before(year: i16, month: i8, day: i8, weekday: Weekday) -> Option<Date> {
+    let mut d = Date::new(year, month, day).ok()?.yesterday().ok()?;
+    // seven steps at most reach every weekday
+    for _ in 0..7 {
+        if d.weekday() == weekday {
+            return Some(d);
+        }
+        d = d.yesterday().ok()?;
+    }
+    None
 }
 
 /// Easter Sunday of `year` in the Gregorian calendar.
@@ -105,6 +171,79 @@ pub fn germany_national() -> Vec<Holiday> {
         Holiday::Fixed { month: 12, day: 25 },
         Holiday::Fixed { month: 12, day: 26 },
     ]
+}
+
+/// The sixteen German federal states (Bundesländer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum GermanState {
+    /// Baden-Württemberg
+    BadenWuerttemberg,
+    /// Bayern
+    Bayern,
+    /// Berlin
+    Berlin,
+    /// Brandenburg
+    Brandenburg,
+    /// Bremen
+    Bremen,
+    /// Hamburg
+    Hamburg,
+    /// Hessen
+    Hessen,
+    /// Mecklenburg-Vorpommern
+    MecklenburgVorpommern,
+    /// Niedersachsen
+    Niedersachsen,
+    /// Nordrhein-Westfalen
+    NordrheinWestfalen,
+    /// Rheinland-Pfalz
+    RheinlandPfalz,
+    /// Saarland
+    Saarland,
+    /// Sachsen
+    Sachsen,
+    /// Sachsen-Anhalt
+    SachsenAnhalt,
+    /// Schleswig-Holstein
+    SchleswigHolstein,
+    /// Thüringen
+    Thueringen,
+}
+
+/// The regional public holidays of one German federal state, on top of
+/// [`germany_national`]. Use both: `.holidays(germany_national()).holidays(germany_regional(GermanState::Bayern))`.
+///
+/// Covered: Epiphany (6 Jan), Women's Day (8 Mar), Corpus Christi, Assumption (15 Aug),
+/// All Saints (1 Nov), Reformation Day (31 Oct) and Buß- und Bettag. Only days that apply
+/// statewide are listed. Partial ones (Assumption in Catholic parts of Bavaria, Corpus
+/// Christi in parts of Saxony and Thuringia) and others such as Thuringia's Weltkindertag
+/// are not, so check them against your own calendar. Schleswig-Holstein has no entry here.
+pub fn germany_regional(state: GermanState) -> Vec<Holiday> {
+    use GermanState::*;
+    let epiphany = Holiday::Fixed { month: 1, day: 6 };
+    let women = Holiday::Fixed { month: 3, day: 8 };
+    let corpus_christi = Holiday::Easter(60);
+    let assumption = Holiday::Fixed { month: 8, day: 15 };
+    let all_saints = Holiday::Fixed { month: 11, day: 1 };
+    let reformation = Holiday::Fixed { month: 10, day: 31 };
+    let repentance = Holiday::WeekdayBefore {
+        month: 11,
+        day: 23,
+        weekday: Weekday::Wednesday,
+    };
+    match state {
+        BadenWuerttemberg | Bayern => vec![epiphany, corpus_christi, all_saints],
+        Berlin => vec![women],
+        Brandenburg | Bremen | Hamburg | Niedersachsen | Thueringen => vec![reformation],
+        MecklenburgVorpommern => vec![women, reformation],
+        Hessen => vec![corpus_christi],
+        NordrheinWestfalen | RheinlandPfalz => vec![corpus_christi, all_saints],
+        Saarland => vec![corpus_christi, all_saints, assumption],
+        Sachsen => vec![reformation, repentance],
+        SachsenAnhalt => vec![epiphany, reformation],
+        SchleswigHolstein => Vec::new(),
+    }
 }
 
 /// The public holidays of Austria: New Year, Epiphany, Easter Monday, 1 May, Ascension Day,
@@ -269,5 +408,66 @@ mod tests {
         let us = days_in(&united_states_federal(), 2026);
         assert_eq!(us.len(), 11);
         assert!(us.contains(&date(2026, 7, 3)) && us.contains(&date(2026, 6, 19)));
+    }
+
+    #[test]
+    fn weekday_before_is_the_last_one_strictly_before() {
+        let bettag = Holiday::WeekdayBefore {
+            month: 11,
+            day: 23,
+            weekday: Weekday::Wednesday,
+        };
+        assert!(bettag.matches(date(2024, 11, 20))); // 23 Nov 2024 is a Saturday
+        assert!(bettag.matches(date(2025, 11, 19))); // 23 Nov 2025 is a Sunday
+        assert!(bettag.matches(date(2026, 11, 18)));
+        assert!(bettag.matches(date(2027, 11, 17))); // 23 Nov 2027 is a Tuesday
+        assert!(!bettag.matches(date(2026, 11, 25)));
+        assert!(!bettag.matches(date(2026, 11, 19)));
+        // a weekday falling on the date itself does not count
+        let before_wed = Holiday::WeekdayBefore {
+            month: 11,
+            day: 18,
+            weekday: Weekday::Wednesday,
+        };
+        assert!(before_wed.matches(date(2026, 11, 11)));
+        assert!(!before_wed.matches(date(2026, 11, 18)));
+        // invalid dates never match
+        let feb30 = Holiday::WeekdayBefore {
+            month: 2,
+            day: 30,
+            weekday: Weekday::Monday,
+        };
+        assert!(days_in(&[feb30], 2026).is_empty());
+    }
+
+    #[test]
+    fn regional_days_per_state() {
+        let regional = |state| {
+            let mut all = germany_national();
+            all.extend(germany_regional(state));
+            days_in(&all, 2026).len()
+        };
+        use GermanState::*;
+        // 9 national days in 2026, plus the regional ones
+        assert_eq!(regional(Bayern), 12); // Epiphany, Corpus Christi (4 Jun), 1 Nov (a Sunday)
+        assert_eq!(regional(BadenWuerttemberg), 12);
+        assert_eq!(regional(Berlin), 10); // 8 Mar 2026 is a Sunday, still a day off on paper
+        assert_eq!(regional(Saarland), 12); // 15 Aug 2026 is a Sunday
+        assert_eq!(regional(SchleswigHolstein), 9);
+        let nrw = days_in(&germany_regional(NordrheinWestfalen), 2026);
+        assert!(nrw.contains(&date(2026, 6, 4)) && nrw.contains(&date(2026, 11, 1)));
+    }
+
+    #[test]
+    fn regional_days_hit_the_right_dates() {
+        let saxony = germany_regional(GermanState::Sachsen);
+        assert!(saxony.iter().any(|h| h.matches(date(2026, 11, 18)))); // Buß- und Bettag
+        assert!(saxony.iter().any(|h| h.matches(date(2026, 10, 31)))); // Reformation Day
+        assert!(!saxony.iter().any(|h| h.matches(date(2026, 11, 1))));
+        let hamburg = germany_regional(GermanState::Hamburg);
+        assert!(hamburg.iter().any(|h| h.matches(date(2026, 10, 31))));
+        let thueringen = germany_regional(GermanState::Thueringen);
+        assert!(!thueringen.iter().any(|h| h.matches(date(2026, 1, 6))));
+        assert!(germany_regional(GermanState::SchleswigHolstein).is_empty());
     }
 }

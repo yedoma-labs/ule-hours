@@ -67,6 +67,22 @@ impl Window {
     }
 }
 
+/// Serialized as the text `"22:00-06:00"`, the same form [`Window::parse`] reads.
+#[cfg(feature = "serde")]
+impl serde::Serialize for Window {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Window {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = <String as serde::Deserialize>::deserialize(deserializer)?;
+        Window::parse(&text).map_err(serde::de::Error::custom)
+    }
+}
+
 impl fmt::Display for Window {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let t = |s: u32| format!("{:02}:{:02}", s / 3600, s % 3600 / 60);

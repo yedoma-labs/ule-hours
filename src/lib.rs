@@ -41,8 +41,8 @@ mod window;
 
 pub use error::Error;
 pub use holiday::{
-    austria_national, easter_sunday, france_national, germany_national, united_states_federal,
-    Holiday,
+    austria_national, easter_sunday, france_national, germany_national, germany_regional,
+    united_states_federal, GermanState, Holiday,
 };
 pub use jiff;
 pub use pauses::Pauses;

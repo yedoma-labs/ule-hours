@@ -7,7 +7,24 @@ use crate::schedule::Interval;
 /// Time that does not count, for example while waiting for the customer. Overlapping
 /// pauses are merged.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(from = "Vec<(Timestamp, Timestamp)>")
+)]
 pub struct Pauses(Vec<(Timestamp, Timestamp)>);
+
+/// Deserializing merges and drops invalid ranges, as [`Pauses::add`] does.
+#[cfg(feature = "serde")]
+impl From<Vec<(Timestamp, Timestamp)>> for Pauses {
+    fn from(ranges: Vec<(Timestamp, Timestamp)>) -> Self {
+        let mut pauses = Pauses::new();
+        for (from, to) in ranges {
+            pauses.add(from, to);
+        }
+        pauses
+    }
+}
 
 impl Pauses {
     /// No pauses.

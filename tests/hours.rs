@@ -353,3 +353,37 @@ fn country_presets_close_the_office() {
         "Mon 2026-07-06 14:00"
     );
 }
+
+#[test]
+fn bavarian_corpus_christi_and_saxon_repentance_day_close_the_office() {
+    use ule_hours::{germany_regional, GermanState};
+    let bayern = Schedule::builder("Europe/Berlin")
+        .unwrap()
+        .mon_fri("08:00-16:00")
+        .unwrap()
+        .holidays(germany_national())
+        .holidays(germany_regional(GermanState::Bayern))
+        .build();
+    // Wednesday 3 June 2026 14:00: 2 h left that day, Thursday 4 June is Corpus Christi,
+    // so the last 2 h run on Friday 08:00-10:00
+    let due = bayern
+        .add(ts("2026-06-03T14:00:00+02:00"), hours(4))
+        .unwrap();
+    assert_eq!(berlin(&due.to_string()), "Fri 2026-06-05 10:00");
+
+    let sachsen = Schedule::builder("Europe/Berlin")
+        .unwrap()
+        .mon_fri("08:00-16:00")
+        .unwrap()
+        .holidays(germany_national())
+        .holidays(germany_regional(GermanState::Sachsen))
+        .build();
+    // Tuesday 17 November 2026 15:00: 1 h left, Wednesday 18 November is Buß- und Bettag
+    let due = sachsen
+        .add(ts("2026-11-17T15:00:00+01:00"), hours(2))
+        .unwrap();
+    assert_eq!(berlin(&due.to_string()), "Thu 2026-11-19 09:00");
+    // the same day is an ordinary working day in Bavaria
+    assert!(bayern.is_open(ts("2026-11-18T10:00:00+01:00")));
+    assert!(!sachsen.is_open(ts("2026-11-18T10:00:00+01:00")));
+}
