@@ -1,0 +1,30 @@
+[package]
+name = "ule-hours"
+version = "0.1.0"
+edition = "2021"
+authors = ["yedoma-labs"]
+description = "Working-hours and SLA calculator - deadlines in working time, DST-correct, with holidays, lunch breaks and paused clocks"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yedoma-labs/ule-hours"
+homepage = "https://github.com/yedoma-labs/ule-hours"
+documentation = "https://docs.rs/ule-hours"
+readme = "README.md"
+keywords = ["sla", "business-hours", "working-hours", "deadline", "calendar"]
+categories = ["date-and-time", "algorithms"]
+exclude = [
+    ".github/*",
+    ".githooks/*",
+    "release-plz.toml",
+    "target/*",
+]
+
+[dependencies]
+jiff = "0.2.38"
+
+[lib]
+name = "ule_hours"
+path = "src/lib.rs"
+
+[[example]]
+name = "sla"
+path = "examples/sla.rs"
