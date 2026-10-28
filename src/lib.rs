@@ -1,7 +1,5 @@
 //! # ule-hours
 //!
-//! *ule* (үлэ; Sakha) = "work".
-//!
 //! Deadlines in **working time**: "reply within 8 working hours", "the invoice is due in
 //! 3 business days", "how much of the SLA is used up". Opening hours are written in local
 //! clock time with a lunch break and holidays, and the arithmetic is correct over daylight

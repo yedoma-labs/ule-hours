@@ -16,8 +16,6 @@
 [![No Unsafe](https://img.shields.io/badge/unsafe-forbidden-success)](src/lib.rs)
 [![Conventional Commits](https://img.shields.io/badge/commits-conventional-fe5196?logo=conventionalcommits&logoColor=white)](https://www.conventionalcommits.org/)
 
-*ule* (үлэ; Yakutian/Sakha) = "work"
-
 ## Why ule-hours?
 
 "Reply within 8 working hours." "Invoice due in 3 business days." "How much of the SLA is used up?" Calendar arithmetic gets this wrong around weekends, lunch breaks, holidays and daylight-saving changes. `ule-hours` writes opening hours in local clock time and computes deadlines in absolute time, on top of [`jiff`](https://docs.rs/jiff).
