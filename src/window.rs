@@ -105,7 +105,10 @@ fn time_of_day(text: &str, allow_24: bool) -> Option<u32> {
         [h, m, s] => (h, m, s),
         _ => return None,
     };
-    let secs = h.checked_mul(3600)?.checked_add(m * 60 + s)?;
+    let secs = h
+        .checked_mul(3600)?
+        .checked_add(m.checked_mul(60)?)?
+        .checked_add(s)?;
     let ok = m < 60 && s < 60 && (h < 24 || (allow_24 && secs == DAY));
     ok.then_some(secs)
 }
@@ -189,5 +192,17 @@ mod tests {
         assert!(parse_windows("08:00-12:00, 11:00-17:00").is_err());
         assert!(parse_windows("13:00-17:00, 08:00-12:00").is_err());
         assert!(parse_windows("").unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod overflow_tests {
+    use super::*;
+
+    #[test]
+    fn huge_minutes_are_rejected_instead_of_overflowing() {
+        assert!(Window::parse("09:4294967295-10:00").is_err());
+        assert!(time_of_day("00:4294967295", false).is_none());
+        assert!(time_of_day("00:00:4294967295", false).is_none());
     }
 }
