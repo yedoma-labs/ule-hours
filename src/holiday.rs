@@ -107,10 +107,15 @@ impl Holiday {
                         .nth_weekday_of_month(n, weekday)
                         .is_ok_and(|d| d == date)
             }
-            // 31 December can be the observed day of the following 1 January
-            Holiday::Observed { month, day } => [date.year(), date.year().saturating_add(1)]
-                .into_iter()
-                .any(|y| observed(y, month, day) == Some(date)),
+            // observed days move by one day at most, so the rule's year can be the year before
+            // (1 January observed on the 31st of December) or the year after (vice versa)
+            Holiday::Observed { month, day } => [
+                date.year().saturating_sub(1),
+                date.year(),
+                date.year().saturating_add(1),
+            ]
+            .into_iter()
+            .any(|y| observed(y, month, day) == Some(date)),
             Holiday::Easter(offset) => easter_sunday(date.year())
                 .and_then(|e| e.checked_add(i64::from(offset).days()).ok())
                 .is_some_and(|d| d == date),
@@ -397,6 +402,15 @@ mod tests {
         let new_year = Holiday::Observed { month: 1, day: 1 };
         assert!(new_year.matches(date(2021, 12, 31))); // 1 Jan 2022 is a Saturday
         assert!(!new_year.matches(date(2022, 1, 1)));
+    }
+
+    #[test]
+    fn observed_sunday_moves_into_the_next_year() {
+        // 31 Dec 2028 is a Sunday, so the observed holiday is Monday 1 Jan 2029
+        let eve = Holiday::Observed { month: 12, day: 31 };
+        assert_eq!(date(2028, 12, 31).weekday(), Weekday::Sunday);
+        assert!(eve.matches(date(2029, 1, 1)));
+        assert!(!eve.matches(date(2028, 12, 31)));
     }
 
     #[test]
