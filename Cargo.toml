@@ -19,7 +19,7 @@ exclude = [
 ]
 
 [dependencies]
-jiff = "0.2.38"
+jiff = "1.0.1"
 serde = { version = "1", optional = true, features = ["derive"] }
 
 [dev-dependencies]
